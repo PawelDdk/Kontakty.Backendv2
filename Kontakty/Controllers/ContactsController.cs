@@ -24,6 +24,7 @@ namespace Kontakty.Controllers
         }
         //edytuj
 
+        [Authorize]
         [HttpPost("/addContact")]
         public IActionResult AddContact([FromBody] AddContactRequest addContactRequest)
         {
@@ -85,6 +86,11 @@ namespace Kontakty.Controllers
                         }
                     };
                 }
+
+                else
+                {
+                    category.Subcategory = _databaseContext.Subcategories.Where(subcategory => subcategory.Name == addContactRequest.Subcategory).FirstOrDefault();
+                }
             }
 
             var contact = new Contact
@@ -122,18 +128,19 @@ namespace Kontakty.Controllers
                     LastName = contact.LastName,
                     Email = contact.Email,
                     Category = contact.Category.Name,
-                    Subcategory = contact.Category.Subcategory.Name,
+                    Subcategory = contact.Category.Name == CategoryEnum.Private.ToString() ? "-" : contact.Category.Subcategory.Name,
                     DateOfBirth = contact.DateOfBirth.ToString(),
                     Password = contact.Password,
                     Phone = contact.Phone,
                 };
 
-                response.Add(getResponse);
+                response.Add (getResponse);
             }
 
             return response;
         }
 
+        [Authorize]
         [HttpGet("/getContactById")]
         public ActionResult<GetResponse> GetById([FromBody] Guid id)
         {
@@ -148,6 +155,7 @@ namespace Kontakty.Controllers
             return Ok(contacts);
         }
 
+        [Authorize]
         [HttpDelete("/deleteContact")]
         public IActionResult DeleteContacts([FromQuery] Guid id)
         {

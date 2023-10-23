@@ -1,37 +1,62 @@
 ﻿using Kontakty.Dto.login;
 using Kontakty.Dto.Register;
 using Kontakty.Models;
-using Kontakty.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
 
 namespace Kontakty.Controllers
 {
     public class UserController : Controller
     {
         private readonly IConfiguration _configuration;
-        private readonly AuthorizationService _authorizationService;
         private readonly DatabaseContext _databaseContext;
 
-        public UserController(IConfiguration configuration, AuthorizationService authorizationService, DatabaseContext databaseContext)
+        public UserController(IConfiguration configuration, DatabaseContext databaseContext)
         {
             _configuration = configuration;
-            _authorizationService = authorizationService;
             _databaseContext = databaseContext;
         }
 
         [HttpPost("/login")]
-        public IActionResult Login([FromBody] LoginRequest loginRequest)
+        public ActionResult<string> Login([FromBody] LoginRequest loginRequest)
         {
-            if (string.IsNullOrEmpty(loginRequest.Email) || string.IsNullOrEmpty(loginRequest.Password))
-                return BadRequest("Wrong email or password.");
+            var user = _databaseContext.Users.FirstOrDefault(user => user.Email == loginRequest.Email && user.Password == loginRequest.Password);
 
-            if (!_authorizationService.ValidateUserCredentials(loginRequest.Email, loginRequest.Password))
-                return Unauthorized("Wrong email or password.");
+            if (user is null)
+                return BadRequest();
 
-            var user = new User { Email = loginRequest.Email };
-            var token = _authorizationService.GenerateJwtToken(user);
-            return Ok( new { Token = token });
+            var issuer = _configuration["Jwt:Issuer"];
+            var audience = _configuration["Jwt:Audience"];
+            var key = Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]);
+            var signingCredentials = new SigningCredentials(
+                                    new SymmetricSecurityKey(key),
+                                    SecurityAlgorithms.HmacSha512Signature);
+
+            var subject = new ClaimsIdentity(new[]
+            {
+                new Claim(JwtRegisteredClaimNames.Sub, loginRequest.Email),
+                new Claim(JwtRegisteredClaimNames.Email, loginRequest.Email),
+            });
+
+            var expires = DateTime.UtcNow.AddMinutes(10);
+
+            var tokenDescriptor = new SecurityTokenDescriptor
+            {
+                Subject = subject,
+                Expires = DateTime.UtcNow.AddMinutes(10),
+                Issuer = issuer,
+                Audience = audience,
+                SigningCredentials = signingCredentials
+            };
+
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var token = tokenHandler.CreateToken(tokenDescriptor);
+
+            return Ok(tokenHandler.WriteToken(token));
         }
 
         [HttpPost("/register")]
@@ -48,9 +73,8 @@ namespace Kontakty.Controllers
 
             _databaseContext.Users.Add(user);
             _databaseContext.SaveChanges();
-            var token = _authorizationService.GenerateJwtToken(user);
 
-            return Ok(new { Token = token });
+            return Ok();
         }
     }
 }
